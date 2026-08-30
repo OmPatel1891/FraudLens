@@ -1,8 +1,29 @@
-# FraudLens
+<h1 align="center">FraudLens</h1>
 
-Real-time transaction fraud detection on the IEEE-CIS dataset: a calibrated
-gradient-boosted model served behind a FastAPI endpoint that returns a fraud
-probability, the SHAP drivers behind it, and live drift monitoring.
+<p align="center">
+  Real-time transaction fraud detection on the IEEE-CIS dataset: a calibrated
+  gradient-boosted model served behind a FastAPI endpoint that returns a fraud
+  probability, the SHAP drivers behind it, and live drift monitoring.
+</p>
+
+<p align="center">
+  <a href="https://fraudlens-1wjy.onrender.com/docs"><b>Live API</b></a> ·
+  <a href="https://fraudlens-1wjy.onrender.com/redoc">API reference</a> ·
+  <a href="FraudLens.ipynb">Notebook walkthrough</a> ·
+  <a href="DEPLOYMENT.md">Deployment runbook</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/OmPatel1891/FraudLens/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/OmPatel1891/FraudLens/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-53%20passing-brightgreen">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
+</p>
+
+> The live demo runs on a free instance that sleeps after 15 minutes idle, so the
+> first request may take 30–60 seconds to wake. Try
+> [`/docs`](https://fraudlens-1wjy.onrender.com/docs) for an interactive form.
 
 ---
 
@@ -21,8 +42,9 @@ problem that means binary classification on tabular data with:
 
 ## Quick start
 
-No Kaggle account needed — a synthetic generator reproduces the dataset's shape,
-sparsity, temporal axis and fraud rate.
+Requires **Python 3.12+** (`xgboost` 3.4 sets that floor). No Kaggle account
+needed — a synthetic generator reproduces the dataset's shape, sparsity,
+temporal axis and fraud rate.
 
 ```bash
 pip install -r requirements.txt
@@ -54,17 +76,18 @@ docker compose up -d
 Only the amount is required; anything else you can supply sharpens the estimate.
 
 ```bash
-curl -X POST http://localhost:8000/predict \
+curl -X POST https://fraudlens-1wjy.onrender.com/predict \
   -H "Content-Type: application/json" \
-  -d '{"TransactionAmt": 4800.00, "ProductCD": "C", "card4": "discover",
-       "P_emaildomain": "anonymous.com", "TransactionDT": 529200}'
+  -d '{"TransactionAmt": 2500.00, "ProductCD": "C", "card1": 9999,
+       "P_emaildomain": "protonmail.com", "TransactionDT": 2592000,
+       "DeviceType": "mobile"}'
 ```
 
 ```json
 {
   "fraud_probability": 0.3778,
   "is_fraud": true,
-  "risk_level": "CRITICAL",
+  "risk_level": "HIGH",
   "top_shap_drivers": [
     {"feature": "is_night", "shap_value": 0.3093, "feature_value": 1.0,
      "direction": "increases fraud risk"},
@@ -77,11 +100,15 @@ curl -X POST http://localhost:8000/predict \
 }
 ```
 
+Risk bands are anchored to the tuned threshold rather than a fixed 0.5, so a
+transaction can never be flagged `is_fraud=true` while being labelled `LOW`.
+
 | Endpoint | Purpose |
 |---|---|
+| `GET /` | Service card and endpoint index |
 | `POST /predict` | Score one transaction. `?explain=false` skips SHAP for lower latency |
 | `POST /batch` | Score a CSV upload, vectorised |
-| `GET /health` | Liveness plus which artifacts loaded. Always 200, so failures are readable |
+| `GET /health` | Liveness, loaded artifacts, and any training/serving version skew. Always 200, so failures are readable |
 | `GET /ready` | Readiness. 503 until the model loads, for load-balancer probes |
 | `GET /metrics` | Held-out test performance |
 | `GET /drift` | PSI of recent live traffic against the training reference |
@@ -99,12 +126,13 @@ fraudlens/              shared library - imported by BOTH training and serving
   preprocessing.py      Preprocessor: frozen column contract, encoding, imputation
   modeling.py           calibration, evaluation, cost-based threshold selection
   drift.py              PSI reference + scoring
+  versions.py           records the stack a model was pickled with
 
 api/main.py             FastAPI service
 dashboard.py            Streamlit UI
 scripts/                data generation, download, training, smoke test, profiling
-tests/                  50 tests, including batch-vs-row feature parity
-deploy/                 Hugging Face Space README, Render blueprint
+tests/                  53 tests, including batch-vs-row feature parity
+deploy/render.yaml      Render blueprint
 .github/workflows/      CI: lint, unit tests, full pipeline, Docker build-and-serve
 FraudLens.ipynb         annotated walkthrough of the same pipeline
 DEPLOYMENT.md           git to production runbook
@@ -145,9 +173,18 @@ is touched exactly once.
 
 ### Selection on PR-AUC, not ROC-AUC
 
-At a 3.5% positive rate ROC-AUC is dominated by the majority class. All three
-candidate models score above 0.93 ROC-AUC while their PR-AUCs range from 0.34
-to 0.45 — PR-AUC is what actually separates them.
+At a 3.5% positive rate ROC-AUC is dominated by the majority class. On
+validation, all three candidates look nearly identical by ROC-AUC while PR-AUC
+separates them cleanly:
+
+| Model | ROC-AUC | PR-AUC | Brier | Train time |
+|---|---|---|---|---|
+| Logistic Regression | 0.9376 | 0.3445 | 0.0967 | 0.2 s |
+| XGBoost | 0.9431 | 0.4121 | 0.0327 | 6.2 s |
+| **LightGBM** (selected) | **0.9468** | **0.4494** | **0.0225** | 5.5 s |
+
+Picking on ROC-AUC would have made this a coin toss between three models whose
+precision-recall behaviour differs by 30%.
 
 ### Calibration
 
@@ -187,8 +224,30 @@ derivatives, and hour): ranking by SHAP alone tends to pick anonymous `V`
 columns and leave amount unwatched, so an upstream feed switching to cents would
 read as perfectly stable. And a single feature at major PSI raises the alert on
 its own rather than requiring a share of the population to move, since that same
-cents bug shifts three columns out of twenty and would sit under any
+cents bug shifts three columns out of twenty-three and would sit under any
 breadth-based threshold.
+
+### Pinning the stack that touches the pickle
+
+Estimators pickle by *class reference*, not by value, so loading a model under a
+different library version rebuilds it from whatever the installed code now does.
+scikit-learn emits `InconsistentVersionWarning` and carries on. For a fraud
+model that is the worst available failure mode: predictions that are wrong but
+plausible, returned as a `200`.
+
+So the six libraries whose objects live inside the artifacts — `numpy`, `scipy`,
+`scikit-learn`, `xgboost`, `lightgbm`, `joblib` — carry compatible-release pins
+that are identical in `requirements.txt` and `requirements-api.txt`. Pins drift
+and base images get rebuilt, so belt and braces: `scripts/train.py` records the
+training versions in `model_meta.json`, and the API compares them on load,
+logging any mismatch and exposing it at `GET /health`:
+
+```json
+{"status": "ok", "model": "LightGBM", "version_mismatches": []}
+```
+
+An empty list is the healthy case. `tests/test_api.py` asserts it stays empty,
+which is what caught a real 1.8.0-vs-1.9.0 skew in the deployed container.
 
 ---
 
@@ -203,6 +262,7 @@ simpler problem; run `scripts/download_data.py` for the real thing.
 | PR-AUC | 0.5056 (logistic baseline 0.3445) |
 | Brier | 0.0225 |
 | Precision / Recall @ threshold | 0.391 / 0.680 |
+| Precision @ 80% recall | 0.218 |
 | Flag rate | 6.0% |
 
 Single-transaction latency, measured by `scripts/profile_latency.py`:
@@ -219,7 +279,9 @@ without, varying with machine load). Disable it with `?explain=false` on the
 authorisation path and fetch explanations asynchronously.
 
 Measured on Python 3.14 / Windows with the 361-feature synthetic model. The real
-IEEE-CIS model has a similar feature count, so expect the same order of magnitude.
+IEEE-CIS model has a similar feature count, so expect the same order of
+magnitude. The free-tier demo adds network round-trip and runs on 0.1 vCPU, so
+it serves the same model at roughly 200–300 ms p50.
 
 ---
 
@@ -229,7 +291,7 @@ IEEE-CIS model has a similar feature count, so expect the same order of magnitud
 python -m pytest tests/ -v
 ```
 
-43 tests. The ones worth knowing about:
+53 tests. The ones worth knowing about:
 
 - `test_batch_and_single_row_agree` — the training/serving parity guarantee
 - `test_output_independent_of_batch_composition` / `_row_order`
@@ -237,6 +299,12 @@ python -m pytest tests/ -v
 - `test_unknown_category_is_isolated` — unseen categories don't impersonate real ones
 - `test_calibration_lowers_brier_without_hurting_ranking`
 - `test_different_inputs_produce_different_scores` — catches silent skew regressions
+- `test_amount_is_monitored_even_when_shap_ignores_it` — the drift blind spot above
+- `test_shipped_artifacts_monitor_transaction_amount` — blocks shipping stale artifacts
+- `test_serving_stack_matches_the_training_stack` — blocks silent pickle skew
+
+CI runs lint, the unit suite, a full synthetic train-and-evaluate pipeline, and a
+Docker build that boots the image and probes every endpoint.
 
 ---
 
@@ -264,7 +332,7 @@ python -m pytest tests/ -v
 - **Evidently does not import on Python 3.14** (its pydantic v1 shim raises
   `ConfigError`). Only the optional offline HTML report is affected; section 10
   of the notebook catches it and the API's own PSI monitoring has no Evidently
-  dependency. Use Python 3.11–3.12 if you want the HTML report.
+  dependency. Use Python 3.12 or 3.13 if you want the HTML report.
 
 ---
 
@@ -275,8 +343,12 @@ tag identifies the model version and rollback is the previous tag. If the build
 context has no trained model, the image trains one on synthetic data so it stays
 self-contained rather than shipping something that answers 503 to everything.
 
-`DEPLOYMENT.md` is the full runbook: CI, hardening, container verification, a
-free-tier deployment on Hugging Face Spaces, and what to monitor afterwards.
+The container runs Python 3.13 on `python:3.13-slim`, installs only
+`requirements-api.txt`, and drops the ~450 MB CUDA collective-communication
+wheel that `xgboost` pulls in but CPU inference never touches.
+
+`DEPLOYMENT.md` is the full runbook: CI, hardening, container verification,
+free-tier deployment on Render, and what to monitor afterwards.
 
 ---
 
@@ -290,3 +362,9 @@ One gotcha worth flagging: `test_identity.csv` names its columns `id-01`–`id-3
 with hyphens, while `train_identity.csv` uses underscores. Merging without
 normalising them silently drops ~20 identity features from the test frame.
 `fraudlens/data.py` handles it and raises if the schemas still disagree.
+
+---
+
+## License
+
+[MIT](LICENSE).
