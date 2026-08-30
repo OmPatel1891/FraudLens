@@ -31,7 +31,11 @@ services:
     restart: unless-stopped
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.12.2
+    # Must stay on the same major as the mlflow that requirements.txt installs.
+    # scripts/train.py migrates the SQLite store to its own schema on first
+    # write, and an older server then cannot read it: alembic fails with
+    # "Can't locate revision" and the container crash-loops.
+    image: ghcr.io/mlflow/mlflow:v3.15.2
     container_name: fraudlens-mlflow
     ports:
       - "5000:5000"
