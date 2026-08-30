@@ -6,6 +6,7 @@ Skipped when models/ is empty, so a fresh clone does not fail before training.
 from __future__ import annotations
 
 import io
+import json
 
 import pandas as pd
 import pytest
@@ -40,6 +41,32 @@ def test_ready_is_200_when_the_model_is_loaded(client):
     response = client.get("/ready")
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
+
+
+def test_root_describes_the_service(client):
+    body = client.get("/").json()
+    assert body["service"] == "FraudLens"
+    assert "/predict" in " ".join(body["endpoints"])
+
+
+def test_shipped_artifacts_monitor_transaction_amount():
+    """Guards against shipping artifacts trained before the drift fix.
+
+    The committed model is what deploys, so a stale drift_reference here means
+    a live service blind to a currency or scaling break in the amount field.
+    """
+    meta = json.loads((MODEL_DIR / "model_meta.json").read_text(encoding="utf-8"))
+    monitored = meta.get("monitored_features", [])
+    assert any("TransactionAmt" in f for f in monitored), (
+        f"amount is unmonitored in the shipped artifacts: {monitored}. "
+        "Retrain with scripts/train.py and commit the result."
+    )
+
+
+def test_serving_stack_matches_the_training_stack(client):
+    """A mismatch means estimators are being rebuilt from different library code."""
+    mismatches = client.get("/health").json()["version_mismatches"]
+    assert mismatches == [], f"pickle-bearing library drift: {mismatches}"
 
 
 def test_ready_fails_the_probe_when_artifacts_are_missing(monkeypatch):

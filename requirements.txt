@@ -2,14 +2,18 @@
 # bounds and current releases, and hard pins made the stack uninstallable on
 # newer Python versions.
 
-# Core ML
-numpy>=1.26,<3
+# Core ML. The pinned entries must match requirements-api.txt exactly: they are
+# the libraries whose objects are inside the pickled model, and unpickling under
+# a different minor version can silently change predictions.
+numpy~=2.4.0
+scipy~=1.16.3
+scikit-learn~=1.8.0
+xgboost~=3.4.0
+lightgbm~=4.7.0
+joblib~=1.5.3
+
 pandas>=2.1,<3
-scikit-learn>=1.4,<2
-xgboost>=2.0,<4
-lightgbm>=4.3,<5
 shap>=0.45,<1
-joblib>=1.3,<2
 
 # Experiment tracking. The floor is 3.x to match the server image pinned in
 # docker-compose.yml: a 2.x server cannot read a store written by a 3.x client.

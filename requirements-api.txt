@@ -10,13 +10,20 @@
 # selection is data-dependent, and an image that cannot unpickle the model it
 # was shipped with is a bad trade for a few hundred megabytes.
 
-numpy>=1.26,<3
+# Compatible-release pins on everything whose objects live inside the pickled
+# artifacts. Estimators unpickle by class reference, so a minor-version bump
+# rebuilds them from different code and can change predictions without raising.
+# These must stay in step with requirements.txt; fraudlens/versions.py records
+# what trained the model and the API logs any mismatch at load.
+numpy~=2.4.0
+scipy~=1.16.3
+scikit-learn~=1.8.0
+xgboost~=3.4.0
+lightgbm~=4.7.0
+joblib~=1.5.3
+
 pandas>=2.1,<3
-scikit-learn>=1.4,<2
-xgboost>=2.0,<4
-lightgbm>=4.3,<5
 shap>=0.45,<1
-joblib>=1.3,<2
 
 fastapi>=0.111,<1
 uvicorn[standard]>=0.29,<1

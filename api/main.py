@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from fraudlens import drift
+from fraudlens import drift, versions
 from fraudlens.config import MODEL_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -68,6 +68,7 @@ class Artifacts:
         self.drift_reference: dict = {}
         self.explainer = None
         self.threshold = 0.5
+        self.version_mismatches: list[str] = []
 
     def load(self, model_dir: Path = MODEL_DIR) -> None:
         try:
@@ -85,6 +86,19 @@ class Artifacts:
                 self.drift_reference = drift.load_reference(ref_path)
 
             self._build_explainer()
+
+            # Unpickling under a different stack can change predictions without
+            # raising, so surface it loudly rather than letting it pass as a
+            # library warning buried in startup logs.
+            self.version_mismatches = versions.compare(self.meta.get("library_versions", {}))
+            for line in self.version_mismatches:
+                logger.warning("library version mismatch - %s", line)
+            if self.version_mismatches:
+                logger.warning(
+                    "Predictions may differ from the tested model. Align "
+                    "requirements-api.txt with the training environment."
+                )
+
             self.ready = True
             self.error = None
             logger.info(
@@ -297,6 +311,29 @@ def health():
         "trained_on": artifacts.meta.get("train_size"),
         "explanations": artifacts.explainer is not None,
         "drift_buffer": len(_recent_features),
+        # Empty is the healthy case: the serving stack matches the one the
+        # artifacts were pickled with.
+        "version_mismatches": artifacts.version_mismatches,
+    }
+
+
+@app.get("/")
+def root():
+    """Service card. Without it a browser hitting the base URL gets a bare 404."""
+    return {
+        "service": "FraudLens",
+        "description": "Real-time transaction fraud scoring with SHAP explanations",
+        "model": artifacts.meta.get("model_name"),
+        "status": "ok" if artifacts.ready else "degraded",
+        "docs": "/docs",
+        "endpoints": {
+            "POST /predict": "Score one transaction; ?explain=false skips SHAP",
+            "POST /batch": "Score a CSV upload",
+            "GET /health": "Liveness and loaded artifacts",
+            "GET /ready": "Readiness; 503 until the model loads",
+            "GET /metrics": "Held-out test performance",
+            "GET /drift": "PSI of recent traffic vs the training reference",
+        },
     }
 
 

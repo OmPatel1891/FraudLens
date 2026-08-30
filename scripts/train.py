@@ -21,7 +21,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fraudlens import drift
+from fraudlens import drift, versions
 from fraudlens.config import (
     MLFLOW_EXPERIMENT,
     MLFLOW_TRACKING_URI,
@@ -360,6 +360,9 @@ def main() -> int:
         "fraud_rate_train": round(float(y_train.mean()), 4),
         "top_features": top_features[:10],
         "monitored_features": monitored,
+        # Lets the API detect that it is unpickling under a different stack
+        # than the one that produced these artifacts.
+        "library_versions": versions.collect(),
         "all_model_results": {
             name: {metric: round(value, 4) for metric, value in scores.items()}
             for name, scores in val_results.items()
