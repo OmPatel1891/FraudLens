@@ -54,7 +54,12 @@ WORKDIR /app
 
 # Copied first so dependency layers survive source-only changes.
 COPY requirements-api.txt .
-RUN pip install --no-cache-dir -r requirements-api.txt
+# xgboost declares nvidia-nccl-cu12 on linux/x86_64, ~450 MB of CUDA collective
+# communication libraries used only for multi-GPU distributed training. This
+# image scores on CPU, so it is dead weight; xgboost trains, predicts and
+# unpickles without it.
+RUN pip install --no-cache-dir -r requirements-api.txt \
+    && pip uninstall -y nvidia-nccl-cu12 2>/dev/null || true
 
 COPY fraudlens/ ./fraudlens/
 COPY api/ ./api/
