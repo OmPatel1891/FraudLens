@@ -148,27 +148,36 @@ itself trains a model — which is the memory- and CPU-hungry step, and the one
 most likely to be killed on a constrained free builder — and that Spaces does
 not spin down between requests.
 
-1. Create a Space at <https://huggingface.co/new-space>, choose **Docker** as
-   the SDK and **Blank** as the template.
-2. Confirm the Space's generated `README.md` front-matter has `sdk: docker` and
-   `app_port: 7860`. `deploy/huggingface/space-README.md` is a ready-made
-   version you can paste in.
-3. Add the Space as a remote and push:
+The Space configuration lives in this repo's root `README.md` front-matter
+(`sdk: docker`, `app_port: 8000`), so pushing the repo is the whole deployment.
+`app_port` deliberately matches the Dockerfile's default `PORT`, which means no
+Space variables are required to get it running.
+
+1. Create a Space at <https://huggingface.co/new-space>: pick a name, choose
+   **Docker** → **Blank**, and set it public.
+2. Add the Space as a git remote and push. Authenticate with a **write** access
+   token from <https://huggingface.co/settings/tokens> — use it as the password
+   when git prompts, with your HF username as the username.
 
 ```bash
 git remote add space https://huggingface.co/spaces/<user>/<space-name>
 git push space main
 ```
 
-4. In **Settings → Variables and secrets**, set `PORT=7860` and add
-   `FRAUDLENS_ADMIN_KEY` as a secret.
+3. Optional but recommended: in **Settings → Variables and secrets**, add
+   `FRAUDLENS_ADMIN_KEY` as a secret to enable `/reload`. Left unset, that
+   endpoint stays disabled, which is the safe default for a public Space.
 
-The first build takes several minutes because it installs the dependencies and
-trains the demo model. Watch the build log; when it goes live your API is at
+The first build takes several minutes: it installs dependencies and trains the
+demo model. Watch the build log. When it goes live the API is at
 `https://<user>-<space-name>.hf.space`, with interactive docs at `/docs`.
 
-The Dockerfile reads `PORT` at startup, which is why the same image works on
-Spaces (7860), Render (10000) and locally (8000) with no edit.
+If the push is rejected because the Space already has a commit, reconcile with
+`git pull space main --allow-unrelated-histories` and keep this repo's
+`README.md` so the front-matter survives.
+
+The Dockerfile reads `PORT` at startup, so the same image also runs on Render
+(10000) or Cloud Run (8080) with only that variable changed.
 
 ### Render (fallback)
 

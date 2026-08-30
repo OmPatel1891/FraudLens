@@ -1,8 +1,23 @@
+---
+title: FraudLens
+emoji: 🔍
+colorFrom: indigo
+colorTo: red
+sdk: docker
+app_port: 8000
+pinned: false
+license: mit
+---
+
 # FraudLens
 
 Real-time transaction fraud detection on the IEEE-CIS dataset: a calibrated
 gradient-boosted model served behind a FastAPI endpoint that returns a fraud
 probability, the SHAP drivers behind it, and live drift monitoring.
+
+> The YAML header above configures a Hugging Face Space and is ignored
+> everywhere else. `app_port` matches the Dockerfile's default `PORT`, so the
+> same image runs on Spaces and locally with no change.
 
 ---
 
