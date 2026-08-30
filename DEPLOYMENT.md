@@ -45,11 +45,16 @@ rather than merely compiles.
 
 ## Phase 3 — How the model reaches production
 
-The model is **baked into the image**. `COPY models/ ./models/` puts the trained
-artifacts inside, so the image tag identifies the model version and a rollback is
-`docker run` on the previous tag rather than a retrain. There is no object-store
-dependency during a cold start, which matters when you sit in the authorization
-path.
+The model is **committed to git and baked into the image**. The artifacts total
+~3.6 MB, so `COPY models/ ./models/` puts the exact tested model inside the
+image. The commit identifies the model version, rollback is `docker run` on the
+previous tag, and there is no object-store dependency during a cold start —
+which matters when you sit in the authorization path.
+
+Committing binaries is a deliberate trade. At this size the history cost is
+negligible, and it buys deterministic deploys: a platform builds the model you
+tested rather than retraining on whatever hardware it happens to allocate.
+Retrain with `python scripts/train.py`, then commit the changed artifacts.
 
 Build a release from a model you trained:
 
@@ -60,13 +65,14 @@ python scripts/train.py
 docker build -t fraudlens:2026-08-29 .
 ```
 
-If the build context has no trained model — a clean CI checkout, or a platform
-building straight from your git remote — the Dockerfile trains one on synthetic
-data during the build. That keeps the image self-contained and demonstrable
-instead of shipping something that answers 503 to every request. The guard is
-`TRAIN_IN_BUILD=true` **and** no `models/model.joblib` present, so it never
-overwrites a real model. Pass `--build-arg TRAIN_IN_BUILD=false` if you
-deliberately want a model-less image to mount into at runtime.
+If the build context has no trained model — a clean CI checkout, or a fresh
+clone before the first train — the Dockerfile installs the training stack and
+trains on synthetic data during the build, so the image stays self-contained
+instead of answering 503 to every request. The guard is `TRAIN_IN_BUILD=true`
+**and** no `models/model.joblib` present, so it never overwrites a real model,
+and with artifacts committed the training dependencies are never installed at
+all. Pass `--build-arg TRAIN_IN_BUILD=false` for a deliberately model-less image
+to mount into at runtime.
 
 A model trained on synthetic data is fine for a demo and dishonest as a
 production claim. Ship a real one before anyone depends on the scores.
@@ -143,58 +149,60 @@ The stack also brings up MLflow on :5000 and the Streamlit dashboard on :8501.
 
 ## Phase 6 — Deploy to a free platform
 
-### Hugging Face Spaces (recommended)
+### Render free tier (recommended)
 
-Free tier gives 2 vCPU and 16 GB RAM with native Docker support and no credit
-card.
+Render's free compute plan is 0.1 CPU and 512 MB RAM, needs no credit card, and
+supports the Docker runtime. Measured steady-state memory is ~169 MiB, so the
+cap is comfortable. Two limits to accept: the service spins down after 15
+minutes idle and takes about a minute to wake, and 0.1 CPU makes scoring
+noticeably slower than the ~50 ms measured locally.
 
-On memory: the serving process measures ~292 MB resident after 200 scored
-requests, so it does fit the 512 MB free tiers elsewhere, though without much
-headroom for a traffic spike. The reasons to prefer Spaces are that the build
-itself trains a model — which is the memory- and CPU-hungry step, and the one
-most likely to be killed on a constrained free builder — and that Spaces does
-not spin down between requests.
+Because the trained artifacts are committed, the build installs serving
+dependencies and copies files — it does not train. That matters here: training
+is the memory- and CPU-hungry step and the one most likely to be killed on a
+free builder.
 
-The Space configuration lives in this repo's root `README.md` front-matter
-(`sdk: docker`, `app_port: 8000`), so pushing the repo is the whole deployment.
-`app_port` deliberately matches the Dockerfile's default `PORT`, which means no
-Space variables are required to get it running.
+1. Push this repo to GitHub (Render deploys from a git remote).
+2. At <https://dashboard.render.com>, choose **New → Web Service** and connect
+   the repository.
+3. Set **Language** to `Docker`, **Branch** to `main`, and **Instance Type** to
+   **Free**.
+4. Under **Advanced**, set **Health Check Path** to `/ready`, and add the
+   environment variables below.
+5. Click **Create Web Service**.
 
-1. Create a Space at <https://huggingface.co/new-space>: pick a name, choose
-   **Docker** → **Blank**, and set it public.
-2. Add the Space as a git remote and push. Authenticate with a **write** access
-   token from <https://huggingface.co/settings/tokens> — use it as the password
-   when git prompts, with your HF username as the username.
-
-```bash
-git remote add space https://huggingface.co/spaces/<user>/<space-name>
-git push space main
+```
+DRIFT_WINDOW=1000
+MAX_BATCH_ROWS=5000
+FRAUDLENS_ADMIN_KEY=<random-32-bytes>    # optional; omit to leave /reload off
 ```
 
-3. Optional but recommended: in **Settings → Variables and secrets**, add
-   `FRAUDLENS_ADMIN_KEY` as a secret to enable `/reload`. Left unset, that
-   endpoint stays disabled, which is the safe default for a public Space.
+Do not set `PORT` — Render injects it and the Dockerfile's `CMD` reads it.
 
-The first build takes several minutes: it installs dependencies and trains the
-demo model. Watch the build log. When it goes live the API is at
-`https://<user>-<space-name>.hf.space`, with interactive docs at `/docs`.
+`deploy/render.yaml` holds the same configuration as a Blueprint if you would
+rather commit the infrastructure than click through the form.
 
-If the push is rejected because the Space already has a commit, reconcile with
-`git pull space main --allow-unrelated-histories` and keep this repo's
-`README.md` so the front-matter survives.
+The service goes live at `https://<name>.onrender.com`, with interactive docs at
+`/docs`. Watch the first deploy from the **Logs** tab.
 
-The Dockerfile reads `PORT` at startup, so the same image also runs on Render
-(10000) or Cloud Run (8080) with only that variable changed.
+### Hugging Face Spaces (requires PRO)
 
-### Render (fallback)
+Since July 2026, Gradio and Docker Spaces run on compute that requires a paid
+plan — PRO for personal accounts, Team or Enterprise for organizations. Free
+personal accounts get Static Spaces, plus up to two Gradio Spaces on ZeroGPU;
+neither can host this container. If you do subscribe, deployment is a `git push`
+to the Space remote once you add this YAML header to the top of `README.md`:
 
-`deploy/render.yaml` is a blueprint pointing at the same Dockerfile with
-`healthCheckPath: /ready`. Runtime memory fits the free plan, but `DRIFT_WINDOW`
-and `MAX_BATCH_ROWS` are still reduced there to keep headroom, and the risk to
-watch is the build step training a model rather than the steady-state process.
-Free services also spin down after inactivity, so the first request after idle
-takes tens of seconds. Render blueprints cannot pass Docker build args, which is
-the reason `TRAIN_IN_BUILD` defaults to true rather than being set per-platform.
+```yaml
+---
+title: FraudLens
+sdk: docker
+app_port: 8000
+---
+```
+
+`app_port` matches the Dockerfile's default `PORT`, so nothing else needs
+configuring.
 
 ### Anywhere else
 

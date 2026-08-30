@@ -2,11 +2,14 @@
 data/
 *.csv
 !tests/**/*.csv
+# threshold_sweep.csv is a model artifact, not data; the dashboard reads it.
+!models/*.csv
 
-# Trained artifacts. models/.gitkeep stays tracked so the Dockerfile's
-# `COPY models/` works on a clean checkout.
-models/*
-!models/.gitkeep
+# Trained artifacts are tracked, not ignored. They total ~3.6 MB, and committing
+# them makes a deploy build deterministic: the platform installs dependencies and
+# copies the exact model that was tested, instead of retraining on a constrained
+# free builder. The commit hash therefore identifies the model version.
+# Retrain with `python scripts/train.py`, then commit the changed artifacts.
 mlruns/
 mlartifacts/
 

@@ -32,8 +32,9 @@ jobs:
       - name: Ruff
         run: ruff check fraudlens api scripts tests dashboard.py
 
-      # The API tests skip themselves when models/ is empty, so this job stays
-      # fast and does not need a trained model.
+      # Trained artifacts are committed, so the API contract tests run here
+      # against the exact model that deploys. They skip themselves if models/ is
+      # ever empty, which keeps a fresh clone from failing before its first train.
       - name: Unit tests
         run: pytest tests/ -q
 
@@ -85,9 +86,8 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # No model in the build context, so the image trains one on synthetic data
-      # and this job proves the container actually serves rather than merely
-      # that it builds.
+      # Builds exactly what deploys: committed artifacts, no build-time training.
+      # Proves the container serves rather than merely that it compiles.
       - name: Build
         uses: docker/build-push-action@v6
         with:

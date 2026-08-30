@@ -1,6 +1,12 @@
-# Render blueprint, kept as a fallback to Hugging Face Spaces. Steady-state
-# memory is ~292 MB, inside the 512 MB free cap; the step at risk is the build,
-# which trains a model. Move to `starter` if builds get killed.
+# Render blueprint for the free compute plan (0.1 CPU / 512 MB).
+#
+# The trained model is committed, so the build only installs serving
+# dependencies and copies artifacts — no training on the free builder.
+# Measured steady-state memory is ~169 MiB, well inside the 512 MB cap.
+#
+# Free-plan behaviour to expect: the service spins down after 15 minutes idle
+# and takes about a minute to wake, and 0.1 CPU makes scoring noticeably slower
+# than the ~50 ms measured locally.
 services:
   - type: web
     name: fraudlens-api
@@ -11,17 +17,17 @@ services:
     healthCheckPath: /ready
     autoDeploy: true
     envVars:
-      # Render blueprints cannot pass Docker build args, which is why the
-      # Dockerfile defaults to training when no model is in the context.
-      - key: PORT
-        value: "8000"
-      # Trims resident memory: the drift ring buffer is the one structure that
-      # grows with traffic.
+      # PORT is injected by Render and read by the Dockerfile's CMD, so it is
+      # deliberately not set here.
+      #
+      # The drift buffer is the one structure that grows with traffic; trimmed
+      # to leave headroom on a 512 MB instance.
       - key: DRIFT_WINDOW
         value: "1000"
       - key: MAX_BATCH_ROWS
         value: "5000"
       - key: FRAUDLENS_CORS_ORIGINS
         value: "*"
+      # Generated once by Render and kept secret; enables POST /reload.
       - key: FRAUDLENS_ADMIN_KEY
         generateValue: true

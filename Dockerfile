@@ -15,24 +15,25 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY fraudlens/ ./fraudlens/
 COPY scripts/ ./scripts/
-
-# models/ carries a tracked .gitkeep so this COPY works on a clean checkout.
 COPY models/ ./models/
 
-# A clean checkout has no trained model, and an image that answers 503 to every
-# request is worse than useless, so the fallback is to train one on synthetic
-# data and stay self-contained. This is a no-op for a real release, where
-# models/ already holds a trained model and the guard below skips it. Pass
-# --build-arg TRAIN_IN_BUILD=false to force a deliberately model-less image.
+# Trained artifacts are committed, so this stage is normally a pass-through and
+# the whole training stack is never installed. The fallback exists for a context
+# with no model — CI, or a fresh clone before the first train — where an image
+# that answers 503 to every request would be worse than useless. Installing the
+# training dependencies inside the guard keeps them off the critical path of an
+# ordinary build, which matters on memory- and CPU-constrained free builders.
+# Pass --build-arg TRAIN_IN_BUILD=false to force a deliberately model-less image.
 ARG TRAIN_IN_BUILD=true
 RUN if [ "$TRAIN_IN_BUILD" = "true" ] && [ ! -f models/model.joblib ]; then \
-        echo "No model in build context; training on synthetic data" && \
+        echo "No model in build context; installing training deps and training" && \
+        pip install --no-cache-dir -r requirements.txt && \
         python scripts/make_synthetic_data.py --train-rows 30000 --test-rows 10000 && \
         python scripts/train.py --fast --shap-sample 800 ; \
+    else \
+        echo "Model present in build context; skipping training" ; \
     fi
 
 
