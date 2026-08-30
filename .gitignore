@@ -42,3 +42,6 @@ kaggle.json
 Thumbs.db
 .vscode/
 .idea/
+
+# Scratch probes against deployed services
+_liveprobe.py
