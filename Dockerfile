@@ -2,7 +2,7 @@
 # Exists only to produce models/. Everything it installs — MLflow, plotting, the
 # notebook stack — is unreachable from api/main.py, so none of it belongs in the
 # image that actually serves traffic.
-FROM python:3.11-slim AS builder
+FROM python:3.13-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
@@ -38,7 +38,7 @@ RUN if [ "$TRAIN_IN_BUILD" = "true" ] && [ ! -f models/model.joblib ]; then \
 
 
 # ── runtime ───────────────────────────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
+FROM python:3.13-slim AS runtime
 
 # libgomp1 is the OpenMP runtime LightGBM and XGBoost link against; curl backs
 # the container healthcheck.
@@ -55,12 +55,17 @@ WORKDIR /app
 
 # Copied first so dependency layers survive source-only changes.
 COPY requirements-api.txt .
-# xgboost declares nvidia-nccl-cu12 on linux/x86_64, ~450 MB of CUDA collective
-# communication libraries used only for multi-GPU distributed training. This
-# image scores on CPU, so it is dead weight; xgboost trains, predicts and
-# unpickles without it.
-RUN pip install --no-cache-dir -r requirements-api.txt \
-    && pip uninstall -y nvidia-nccl-cu12 2>/dev/null || true
+RUN pip install --no-cache-dir -r requirements-api.txt
+
+# xgboost declares an nvidia-nccl wheel on linux/x86_64, ~450 MB of CUDA
+# collective communication libraries used only for multi-GPU distributed
+# training. This image scores on CPU, so it is dead weight; xgboost trains,
+# predicts and unpickles without it. The suffix tracks the CUDA major (cu12,
+# cu13, ...), so match on the prefix rather than pinning one name.
+#
+# Kept as its own step: chaining it onto the install with `|| true` would also
+# swallow a failed install and ship a broken image.
+RUN pip freeze | grep -i '^nvidia-' | cut -d= -f1 | xargs -r pip uninstall -y
 
 COPY fraudlens/ ./fraudlens/
 COPY api/ ./api/
