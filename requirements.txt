@@ -1,0 +1,48 @@
+# Ranges rather than exact pins: the pipeline is tested against both the lower
+# bounds and current releases, and hard pins made the stack uninstallable on
+# newer Python versions.
+
+# Core ML
+numpy>=1.26,<3
+pandas>=2.1,<3
+scikit-learn>=1.4,<2
+xgboost>=2.0,<4
+lightgbm>=4.3,<5
+shap>=0.45,<1
+joblib>=1.3,<2
+
+# Experiment tracking
+mlflow>=2.12,<4
+
+# API serving
+fastapi>=0.111,<1
+uvicorn[standard]>=0.29,<1
+python-multipart>=0.0.9
+pydantic>=2.7,<3
+
+# Dashboard
+streamlit>=1.35,<2
+requests>=2.31,<3
+
+# Plotting
+matplotlib>=3.8,<4
+seaborn>=0.13,<1
+
+# Data acquisition (only needed for the real Kaggle dataset)
+kaggle>=1.6,<2
+
+# Notebook
+jupyter>=1.0
+notebook>=7.0
+
+# Tests
+pytest>=8.0,<9
+httpx>=0.27
+
+# Optional: offline drift reporting only.
+#   - The 0.4.x API (evidently.report.Report) differs sharply from 0.6+; the
+#     notebook detects the installed version and adapts.
+#   - It does not import on Python 3.14 (pydantic v1 shim raises ConfigError).
+#     The notebook degrades gracefully, and fraudlens/drift.py - which is what
+#     the API serves at GET /drift - has no evidently dependency at all.
+evidently>=0.4; python_version < "3.14"

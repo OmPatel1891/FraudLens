@@ -1,0 +1,33 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PIE"]
+ignore = [
+    # FastAPI's dependency system requires calls such as File(...) and Query(...)
+    # in defaults; this is the framework's documented idiom, not a bug.
+    "B008",
+    # typing.Optional is clearer than X | None in Pydantic request models and
+    # keeps the schemas readable.
+    "UP045",
+    "UP007",
+    # Scripts intentionally mutate sys.path before importing the local package,
+    # so module-level imports cannot all sit at the top.
+    "E402",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Broad excepts are deliberate in the serving and reporting paths: an optional
+# integration failing must never take down scoring. Each one logs.
+"api/main.py" = ["BLE001"]
+"scripts/train.py" = ["BLE001"]
+"scripts/download_data.py" = ["BLE001"]
+"fraudlens/features.py" = ["BLE001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]

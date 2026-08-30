@@ -1,0 +1,41 @@
+# Data - never commit the Kaggle dataset or generated stand-ins
+data/
+*.csv
+!tests/**/*.csv
+
+# Trained artifacts. models/.gitkeep stays tracked so the Dockerfile's
+# `COPY models/` works on a clean checkout.
+models/*
+!models/.gitkeep
+mlruns/
+mlartifacts/
+
+# Generated outputs
+plots/
+reports/
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Credentials - kaggle.json holds a live API token
+kaggle.json
+.env
+*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,27 @@
+# Render blueprint. Fallback target: the free instance type caps at 512 MB and
+# this image loads LightGBM, SHAP and pandas, so it can OOM during model load.
+# Use `starter` if the free plan proves unstable, or prefer Hugging Face Spaces.
+services:
+  - type: web
+    name: fraudlens-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /ready
+    autoDeploy: true
+    envVars:
+      # Render blueprints cannot pass Docker build args, which is why the
+      # Dockerfile defaults to training when no model is in the context.
+      - key: PORT
+        value: "8000"
+      # Trims resident memory: the drift ring buffer is the one structure that
+      # grows with traffic.
+      - key: DRIFT_WINDOW
+        value: "1000"
+      - key: MAX_BATCH_ROWS
+        value: "5000"
+      - key: FRAUDLENS_CORS_ORIGINS
+        value: "*"
+      - key: FRAUDLENS_ADMIN_KEY
+        generateValue: true

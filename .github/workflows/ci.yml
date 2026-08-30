@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff pytest
+
+      - name: Ruff
+        run: ruff check fraudlens api scripts tests dashboard.py
+
+      # The API tests skip themselves when models/ is empty, so this job stays
+      # fast and does not need a trained model.
+      - name: Unit tests
+        run: pytest tests/ -q
+
+  pipeline:
+    name: End-to-end pipeline on synthetic data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      # Unit tests alone cannot catch a break between data loading, training and
+      # artifact export, which is exactly where training/serving skew hides.
+      - name: Generate data and train
+        run: |
+          python scripts/make_synthetic_data.py --train-rows 20000 --test-rows 6000
+          python scripts/train.py --fast --shap-sample 400
+
+      - name: Full suite against the trained artifacts
+        run: pytest tests/ -q
+
+      - name: Smoke test the served model
+        run: python scripts/smoke_test.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-artifacts
+          path: |
+            models/
+            plots/
+          retention-days: 7
+
+  docker:
+    name: Docker image builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # No model in the build context, so the image trains one on synthetic data
+      # and this job proves the container actually serves rather than merely
+      # that it builds.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: fraudlens:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run and probe
+        run: |
+          docker run -d --name fraudlens -p 8000:8000 fraudlens:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/ready > /dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/ready
+          curl -fsS http://localhost:8000/health
+          curl -fsS -X POST http://localhost:8000/predict \
+            -H 'Content-Type: application/json' \
+            -d '{"TransactionID":1,"TransactionDT":2592000,"TransactionAmt":2500.0,"ProductCD":"C","card1":9999,"P_emaildomain":"protonmail.com"}'
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs fraudlens

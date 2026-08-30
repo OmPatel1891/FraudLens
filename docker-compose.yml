@@ -1,0 +1,66 @@
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fraudlens-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Local development convenience: the mount shadows the model baked into
+      # the image so a retrain is visible without a rebuild. Deployed images
+      # carry their own model and mount nothing.
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MAX_BATCH_ROWS=50000
+      - DRIFT_WINDOW=5000
+      # Unset leaves /reload disabled rather than open.
+      - FRAUDLENS_ADMIN_KEY=${FRAUDLENS_ADMIN_KEY:-}
+      - FRAUDLENS_CORS_ORIGINS=${FRAUDLENS_CORS_ORIGINS:-*}
+    healthcheck:
+      # Readiness, not liveness: a container whose model failed to load should
+      # report unhealthy instead of quietly accepting traffic.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ready"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.12.2
+    container_name: fraudlens-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      # Must stay the same store scripts/train.py writes to (see
+      # fraudlens/config.py), or the UI renders an empty experiment list.
+      - ./mlruns:/mlruns
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlruns/mlflow.db
+      --default-artifact-root /mlruns/artifacts
+      --host 0.0.0.0
+      --port 5000
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: fraudlens-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./models:/app/models:ro
+      - ./reports:/app/reports:ro
+      - ./plots:/app/plots:ro
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

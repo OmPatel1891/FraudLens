@@ -1,0 +1,3 @@
+Artifacts are written here by `python scripts/train.py` and are gitignored.
+This file is tracked so `COPY models/ ./models/` in the Dockerfile succeeds on a
+clean checkout, where the image then trains its own model via TRAIN_IN_BUILD.
