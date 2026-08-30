@@ -178,11 +178,6 @@ def compute_shap(model, X_sample, plots_dir: Path):
         print("  shap not installed; skipping explainability")
         return [], None
 
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     explainer = shap.TreeExplainer(model)
     values = explainer.shap_values(X_sample)
     if isinstance(values, list):
@@ -194,6 +189,18 @@ def compute_shap(model, X_sample, plots_dir: Path):
         pd.Series(np.abs(values).mean(axis=0), index=X_sample.columns)
         .sort_values(ascending=False)
     )
+
+    # The ranking feeds the drift monitor's watch list, so it has to survive a
+    # serving-sized install with no plotting stack. Only the pictures are
+    # optional.
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("  matplotlib not installed; skipping SHAP plots")
+        return importance.index.tolist(), values
 
     for kind, fname in [("dot", "08_shap_summary.png"), ("bar", "09_shap_bar.png")]:
         plt.figure(figsize=(10, 7))

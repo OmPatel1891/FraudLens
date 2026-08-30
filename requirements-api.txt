@@ -1,0 +1,24 @@
+# Serving-only dependencies.
+#
+# requirements.txt is the full development stack: MLflow, Jupyter, Streamlit,
+# Evidently, plotting and the Kaggle client. None of that is reachable from
+# api/main.py, and installing it into the serving image cost roughly 2.5 GB.
+# The Dockerfile trains in a builder stage using the full file, then copies only
+# the artifacts into a runtime stage built from this one.
+#
+# xgboost is here even though the current best model is LightGBM: model
+# selection is data-dependent, and an image that cannot unpickle the model it
+# was shipped with is a bad trade for a few hundred megabytes.
+
+numpy>=1.26,<3
+pandas>=2.1,<3
+scikit-learn>=1.4,<2
+xgboost>=2.0,<4
+lightgbm>=4.3,<5
+shap>=0.45,<1
+joblib>=1.3,<2
+
+fastapi>=0.111,<1
+uvicorn[standard]>=0.29,<1
+python-multipart>=0.0.9
+pydantic>=2.7,<3
