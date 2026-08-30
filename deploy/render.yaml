@@ -1,6 +1,6 @@
-# Render blueprint. Fallback target: the free instance type caps at 512 MB and
-# this image loads LightGBM, SHAP and pandas, so it can OOM during model load.
-# Use `starter` if the free plan proves unstable, or prefer Hugging Face Spaces.
+# Render blueprint, kept as a fallback to Hugging Face Spaces. Steady-state
+# memory is ~292 MB, inside the 512 MB free cap; the step at risk is the build,
+# which trains a model. Move to `starter` if builds get killed.
 services:
   - type: web
     name: fraudlens-api

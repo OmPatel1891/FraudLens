@@ -139,9 +139,14 @@ The stack also brings up MLflow on :5000 and the Streamlit dashboard on :8501.
 ### Hugging Face Spaces (recommended)
 
 Free tier gives 2 vCPU and 16 GB RAM with native Docker support and no credit
-card. Memory is what rules the other free tiers out: this image loads LightGBM,
-SHAP and pandas and settles around 500–700 MB resident, which does not fit the
-512 MB caps on Render's and Koyeb's free plans.
+card.
+
+On memory: the serving process measures ~292 MB resident after 200 scored
+requests, so it does fit the 512 MB free tiers elsewhere, though without much
+headroom for a traffic spike. The reasons to prefer Spaces are that the build
+itself trains a model — which is the memory- and CPU-hungry step, and the one
+most likely to be killed on a constrained free builder — and that Spaces does
+not spin down between requests.
 
 1. Create a Space at <https://huggingface.co/new-space>, choose **Docker** as
    the SDK and **Blank** as the template.
@@ -168,11 +173,12 @@ Spaces (7860), Render (10000) and locally (8000) with no edit.
 ### Render (fallback)
 
 `deploy/render.yaml` is a blueprint pointing at the same Dockerfile with
-`healthCheckPath: /ready`. Two caveats: the free instance may OOM during model
-load, which is why `DRIFT_WINDOW` and `MAX_BATCH_ROWS` are reduced there; and
-free services spin down after inactivity, so the first request after idle takes
-tens of seconds. Render blueprints cannot pass Docker build args, which is the
-reason `TRAIN_IN_BUILD` defaults to true rather than being set per-platform.
+`healthCheckPath: /ready`. Runtime memory fits the free plan, but `DRIFT_WINDOW`
+and `MAX_BATCH_ROWS` are still reduced there to keep headroom, and the risk to
+watch is the build step training a model rather than the steady-state process.
+Free services also spin down after inactivity, so the first request after idle
+takes tens of seconds. Render blueprints cannot pass Docker build args, which is
+the reason `TRAIN_IN_BUILD` defaults to true rather than being set per-platform.
 
 ### Anywhere else
 
