@@ -13,14 +13,6 @@
   <a href="DEPLOYMENT.md">Deployment runbook</a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/OmPatel1891/FraudLens/actions/workflows/ci.yml">
-    <img alt="CI" src="https://github.com/OmPatel1891/FraudLens/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-53%20passing-brightgreen">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
-</p>
-
 > The live demo runs on a free instance that sleeps after 15 minutes idle, so the
 > first request may take 30–60 seconds to wake. Try
 > [`/docs`](https://fraudlens-1wjy.onrender.com/docs) for an interactive form.
